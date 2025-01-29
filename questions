@@ -1,156 +1,51 @@
-import React, { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { saveAs } from "file-saver";
-import axios from "axios";
-import firebase from "firebase/app";
-import "firebase/firestore";
-import "firebase/auth";
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EPR Obligation Questionnaire</title>
+    <script>
+        function calculateEPR() {
+            const countries = document.querySelectorAll('input[name="country"]:checked');
+            const categories = document.querySelectorAll('input[name="category"]:checked');
+            let result = "<h2>Your EPR Obligations & Costs</h2><table border='1'><tr><th>Country</th><th>Category</th><th>Registration Fee (€)</th><th>Annual Filing Fee (€)</th></tr>";
 
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+            const fees = {
+                "France": { "Batteries": [120, 180], "Textiles": [120, 180], "SUP": ["N/A", "N/A"], "WEEE": [120, 180] },
+                "Germany": { "Batteries": [120, 180], "Textiles": ["N/A", "N/A"], "SUP": [120, 180], "WEEE": [50, 300] },
+                "Spain": { "Batteries": [120, 600], "Textiles": ["N/A", "N/A"], "SUP": ["N/A", "N/A"], "WEEE": [120, 600] }
+            };
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
+            countries.forEach(country => {
+                categories.forEach(category => {
+                    if (fees[country.value] && fees[country.value][category.value]) {
+                        let [regFee, filingFee] = fees[country.value][category.value];
+                        result += `<tr><td>${country.value}</td><td>${category.value}</td><td>${regFee}</td><td>${filingFee}</td></tr>`;
+                    }
+                });
+            });
 
-const db = firebase.firestore();
+            result += "</table>";
+            document.getElementById("result").innerHTML = result;
+        }
+    </script>
+</head>
+<body>
+    <h1>EPR Obligation Questionnaire</h1>
+    <h3>Step 1: Company Information</h3>
+    <label>Company Name: <input type="text"></label><br>
+    <label>Country of Registration: <input type="text"></label><br>
 
-const questions = [
-  {
-    id: 1,
-    question: "What type of business do you operate?",
-    options: ["Manufacturer", "Importer or distributor", "Brand owner", "Online marketplace seller", "Retailer"],
-    type: "multiple",
-  },
-  {
-    id: 2,
-    question: "Where do you sell your products?",
-    options: ["France", "Germany", "Spain", "Other EU countries", "Outside the EU"],
-    type: "multiple",
-  },
-  {
-    id: 3,
-    question: "Which types of products do you sell?",
-    options: ["Products with packaging", "Electrical and electronic products", "Batteries", "Textiles and clothing", "Furniture", "Tires"],
-    type: "multiple",
-  }
-];
+    <h3>Step 2: Selling Countries</h3>
+    <label><input type="checkbox" name="country" value="France"> France</label><br>
+    <label><input type="checkbox" name="country" value="Germany"> Germany</label><br>
+    <label><input type="checkbox" name="country" value="Spain"> Spain</label><br>
 
-const EPRQuestionnaire = () => {
-  const [answers, setAnswers] = useState({});
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [result, setResult] = useState(null);
+    <h3>Step 3: Product Categories</h3>
+    <label><input type="checkbox" name="category" value="Batteries"> Batteries</label><br>
+    <label><input type="checkbox" name="category" value="Textiles"> Textiles</label><br>
+    <label><input type="checkbox" name="category" value="SUP"> Single-Use Plastics (SUP)</label><br>
+    <label><input type="checkbox" name="category" value="WEEE"> Waste Electrical and Electronic Equipment (WEEE)</label><br>
 
-  useEffect(() => {
-    fetchAmazonData();
-  }, []);
-
-  const fetchAmazonData = async () => {
-    try {
-      const response = await axios.get("/api/amazon-data");
-      console.log("Amazon SKU Data:", response.data);
-    } catch (error) {
-      console.error("Error fetching Amazon data:", error);
-    }
-  };
-
-  const handleAnswer = (answer) => {
-    setAnswers({ ...answers, [questions[currentQuestion].id]: answer });
-    if (currentQuestion + 1 < questions.length) {
-      setCurrentQuestion(currentQuestion + 1);
-    } else {
-      evaluateEPR();
-    }
-  };
-
-  const evaluateEPR = () => {
-    const needsEPR = {};
-    if (answers[2]?.includes("France") || answers[3]?.includes("Products with packaging")) {
-      needsEPR.France = true;
-    }
-    if (answers[2]?.includes("Germany") || answers[3]?.includes("Electrical and electronic products")) {
-      needsEPR.Germany = true;
-    }
-    if (answers[2]?.includes("Spain") || answers[3]?.includes("Batteries")) {
-      needsEPR.Spain = true;
-    }
-    setResult(needsEPR);
-    saveToDatabase(needsEPR);
-    sendEmailNotification(needsEPR);
-  };
-
-  const saveToDatabase = async (data) => {
-    try {
-      await db.collection("epr_responses").add({
-        answers,
-        result: data,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-      });
-      console.log("Data saved successfully");
-    } catch (error) {
-      console.error("Error saving data:", error);
-    }
-  };
-
-  const sendEmailNotification = async (data) => {
-    try {
-      await axios.post("/api/send-email", { result: data });
-      console.log("Email notification sent successfully");
-    } catch (error) {
-      console.error("Error sending email notification:", error);
-    }
-  };
-
-  const generatePDF = () => {
-    const content = JSON.stringify(result, null, 2);
-    const blob = new Blob([content], { type: "application/json" });
-    saveAs(blob, "EPR_Compliance_Report.pdf");
-  };
-
-  return (
-    <Card className="max-w-lg mx-auto mt-10 p-6 shadow-lg">
-      <CardContent>
-        {result ? (
-          <div>
-            <h2 className="text-xl font-bold mb-4">EPR Compliance Results</h2>
-            {Object.keys(result).length > 0 ? (
-              <ul>
-                {Object.entries(result).map(([country, required]) =>
-                  required ? <li key={country}>✅ You need EPR reporting in {country}</li> : null
-                )}
-              </ul>
-            ) : (
-              <p>✅ You do not need EPR reporting in these countries.</p>
-            )}
-            <Button onClick={generatePDF} className="mt-4">Download Report</Button>
-          </div>
-        ) : (
-          <div>
-            <h2 className="text-lg font-semibold mb-4">{questions[currentQuestion].question}</h2>
-            <div className="space-y-2">
-              {questions[currentQuestion].options.map((option) => (
-                <Button
-                  key={option}
-                  onClick={() => handleAnswer(questions[currentQuestion].type === "multiple" ? [option] : option)}
-                  className="w-full"
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-};
-
-export default EPRQuestionnaire;
-
+    <button onclick="calculateEPR()">Calculate EPR Obligations</button>
+    <div id="result"></div>
+</body>
+</html>
